@@ -1,4 +1,4 @@
-name: Deploy Flutter web to GitHub Pages
+name: Deploy Farmer website to GitHub Pages
 
 on:
   push:
@@ -18,23 +18,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - name: Prepare web platform
-        run: flutter create . --platforms web
-      - name: Install dependencies
-        run: flutter pub get
-      - name: Build web app
-        run: flutter build web --release --base-href /farmer/
+
+      - name: Prepare static website
+        run: |
+          mkdir -p _site
+          cp index.html _site/index.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: build/web
+          path: _site
+
   deploy:
     environment:
       name: github-pages
