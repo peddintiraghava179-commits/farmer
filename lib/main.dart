@@ -7,6 +7,20 @@ void main() => runApp(const FarmerExpenseApp());
 const farmGreen = Color(0xFF176B45);
 const paleGreen = Color(0xFFEAF5EE);
 
+// Illustrative per-acre planning benchmarks, not live mandi prices.
+const cropBenchmarks = <String, Map<String, double>>{
+  'paddy': {'seeds':1800,'fertilizer':5200,'pesticides':2600,'labour':8500,'irrigation':3000,'machinery':4200,'other':1800,'yield':25,'price':2300},
+  'rice': {'seeds':1800,'fertilizer':5200,'pesticides':2600,'labour':8500,'irrigation':3000,'machinery':4200,'other':1800,'yield':25,'price':2300},
+  'cotton': {'seeds':2000,'fertilizer':4800,'pesticides':5200,'labour':9000,'irrigation':2600,'machinery':2800,'other':2200,'yield':8,'price':7200},
+  'maize': {'seeds':1600,'fertilizer':4300,'pesticides':1800,'labour':5200,'irrigation':2200,'machinery':3000,'other':1500,'yield':28,'price':2200},
+  'groundnut': {'seeds':3200,'fertilizer':3000,'pesticides':1600,'labour':6500,'irrigation':1800,'machinery':2200,'other':1400,'yield':8,'price':6000},
+  'chilli': {'seeds':3500,'fertilizer':6500,'pesticides':7000,'labour':14000,'irrigation':3500,'machinery':1800,'other':3500,'yield':12,'price':11000},
+  'turmeric': {'seeds':9000,'fertilizer':6500,'pesticides':3000,'labour':12000,'irrigation':3000,'machinery':2500,'other':3000,'yield':25,'price':9000},
+  'soybean': {'seeds':2200,'fertilizer':3000,'pesticides':1800,'labour':4500,'irrigation':800,'machinery':2200,'other':1200,'yield':8,'price':4500},
+  'tomato': {'seeds':4500,'fertilizer':6000,'pesticides':5000,'labour':11000,'irrigation':3500,'machinery':2000,'other':4000,'yield':100,'price':1200},
+  'wheat': {'seeds':1800,'fertilizer':4000,'pesticides':1500,'labour':4000,'irrigation':2200,'machinery':2600,'other':1200,'yield':18,'price':2425},
+};
+
 String rupees(num n) => '₹${n.toStringAsFixed(2)}';
 
 class FarmerExpenseApp extends StatelessWidget {
@@ -175,7 +189,22 @@ class _AddCropPageState extends State<AddCropPage> {
   final keys=['acres','seeds','fertilizer','pesticides','labour','irrigation','machinery','other','yield','price'];
   late final Map<String,TextEditingController> c={for(final k in keys) k:TextEditingController(text:['seeds','fertilizer','pesticides','labour','irrigation','machinery','other'].contains(k)?'0':'')};
   String season='Kharif';
+  String? estimateFor;
   double n(String k)=>double.tryParse(c[k]!.text.trim())??0;
+
+  void applyCropEstimate(String raw) {
+    final name = raw.trim().toLowerCase();
+    final benchmark = cropBenchmarks[name];
+    if (benchmark == null) return;
+    final acres = n('acres') > 0 ? n('acres') : 1.0;
+    setState(() {
+      estimateFor = name;
+      for (final key in ['seeds','fertilizer','pesticides','labour','irrigation','machinery','other','yield','price']) {
+        final value = key == 'price' ? benchmark[key]! : benchmark[key]! * acres;
+        c[key]!.text = value.toStringAsFixed(0);
+      }
+    });
+  }
   double get cost=>['seeds','fertilizer','pesticides','labour','irrigation','machinery','other'].fold(0,(s,k)=>s+n(k));
   double get revenue=>n('yield')*n('price');
   @override
@@ -203,13 +232,40 @@ class _AddCropPageState extends State<AddCropPage> {
     body:Form(key:formKey,child:ListView(padding:const EdgeInsets.all(16),children:[
       section('Crop details',Icons.grass,[
         TextFormField(controller:crop,textCapitalization:TextCapitalization.words,
-          decoration:const InputDecoration(labelText:'Crop name',hintText:'Paddy, cotton, maize'),
+          decoration:const InputDecoration(labelText:'Crop name',hintText:'Paddy, cotton, maize, chilli'),
+          onChanged:(v) {
+            final key = v.trim().toLowerCase();
+            if (cropBenchmarks.containsKey(key)) applyCropEstimate(key);
+          },
           validator:(v)=>v==null||v.trim().isEmpty?'Enter crop name':null),
+        const SizedBox(height:8),
+        const Text('Supported crops: Paddy, Cotton, Maize, Groundnut, Chilli, Turmeric, Soybean, Tomato, Wheat. Enter the full crop name to auto-fill.',
+          style:TextStyle(fontSize:12,color:Colors.black54)),
         const SizedBox(height:12),
         DropdownButtonFormField<String>(value:season,decoration:const InputDecoration(labelText:'Growing season'),
           items:['Kharif','Rabi','Zaid','Year-round','Other'].map((s)=>DropdownMenuItem(value:s,child:Text(s))).toList(),
           onChanged:(v)=>setState(()=>season=v??season)),
-        const SizedBox(height:12),numberField('acres','Land area (acres)',positive:true)]),
+        const SizedBox(height:12),
+        TextFormField(controller:c['acres'],keyboardType:const TextInputType.numberWithOptions(decimal:true),
+          decoration:const InputDecoration(labelText:'Land area (acres)'),
+          validator:(v)=>validate(v,positive:true),
+          onChanged:(v) {
+            final acres = double.tryParse(v.trim());
+            final benchmark = cropBenchmarks[crop.text.trim().toLowerCase()];
+            if (acres != null && acres > 0 && benchmark != null) {
+              setState(() {
+                for (final k in ['seeds','fertilizer','pesticides','labour','irrigation','machinery','other','yield']) {
+                  c[k]!.text = (benchmark[k]! * acres).toStringAsFixed(0);
+                }
+              });
+            }
+          }),
+        if (estimateFor != null) ...[
+          const SizedBox(height:10),
+          Container(padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:paleGreen,borderRadius:BorderRadius.circular(12)),
+            child:const Text('These are planning estimates, not live market data. Costs and yield vary by region and season. Confirm the local mandi price and edit values before saving.',
+              style:TextStyle(fontSize:12,color:farmGreen))),
+        ]]),
       section('Expense breakdown (₹)',Icons.account_balance_wallet_outlined,[
         numberField('seeds','Seeds cost'),const SizedBox(height:10),
         numberField('fertilizer','Fertilizer cost'),const SizedBox(height:10),
@@ -223,7 +279,9 @@ class _AddCropPageState extends State<AddCropPage> {
             Text(rupees(cost),style:const TextStyle(color:farmGreen,fontWeight:FontWeight.bold,fontSize:17))]))]),
       section('Expected harvest & income',Icons.trending_up,[
         numberField('yield','Expected yield (quintals)',positive:true),const SizedBox(height:10),
-        numberField('price','Selling price per quintal (₹)',positive:true),const SizedBox(height:14),
+        numberField('price','Selling price per quintal (₹)',positive:true),const SizedBox(height:8),
+        const Text('The default selling price is indicative, not live. Confirm today’s price at your nearest mandi.',
+          style:TextStyle(fontSize:12,color:Colors.black54)),const SizedBox(height:14),
         Text('Expected income: ${rupees(revenue)}',style:const TextStyle(fontWeight:FontWeight.bold,color:farmGreen,fontSize:16)),
         const SizedBox(height:6),Text('${revenue>=cost?'Estimated profit':'Estimated loss'}: ${rupees((revenue-cost).abs())}',
           style:TextStyle(fontWeight:FontWeight.bold,color:revenue>=cost?farmGreen:Colors.red,fontSize:16))]),
